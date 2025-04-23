@@ -27,10 +27,11 @@ const app = express()
 
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173', 
-  'http://localhost:3000',  
-  'http://localhost:5000'   
-];
+    process.env.FRONTEND_URL || 'http://localhost:5173', 
+    'http://localhost:3000',  
+    'http://localhost:5000',
+    'https://password-manager-r949.onrender.com'  // Add your render.com domain
+  ];
 
 app.use(cors({
   origin: function(origin, callback) {
