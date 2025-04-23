@@ -1,66 +1,56 @@
-const express = require('express')
-const dotenv = require('dotenv')
-const { MongoClient } = require('mongodb'); 
-const bodyparser = require('body-parser')
-const cors = require('cors')
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import dotenv from "dotenv";
 
-dotenv.config()
+dotenv.config();
 
+const app = express();
+app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(express.json());
 
-// Connecting to the MongoDB Client
-const url = process.env.MONGO_URI;
-const client = new MongoClient(url);
-client.connect();
-
-// App & Database
-const dbName = process.env.DB_NAME 
-const app = express()
-const port = 3000 
-
-// Middleware
-app.use(bodyparser.json())
-app.use(cors())
-
-
-// Get all the passwords
-app.get('/', async (req, res) => {
-    const db = client.db(dbName);
-    const collection = db.collection('passwords');
-    const findResult = await collection.find({}).toArray();
-    res.json(findResult)
+mongoose.connect(process.env.MONGO_URI, {
+    dbName: process.env.DB_NAME,
 })
+.then(() => console.log("MongoDB connected"))
+.catch((err) => console.error("Mongo error", err));
 
-// Update a password by id
-app.put('/', async (req, res) => { 
-  const password = req.body;
-  const db = client.db(dbName);
-  const collection = db.collection('passwords');
-  const findResult = await collection.updateOne(
-      { id: password.id }, 
-      { $set: password }
-  );
-  res.send({success: true, result: findResult});
+// Schema
+const passwordSchema = new mongoose.Schema({
+    id: String,
+    site: String,
+    username: String,
+    password: String,
+});
+const Password = mongoose.model("Password", passwordSchema);
+
+// GET all passwords
+app.get("/", async (req, res) => {
+    const data = await Password.find();
+    res.json(data);
 });
 
-// Save a password
-app.post('/', async (req, res) => { 
-    const password = req.body
-    const db = client.db(dbName);
-    const collection = db.collection('passwords');
-    const findResult = await collection.insertOne(password);
-    res.send({success: true, result: findResult})
-})
+// POST new password
+app.post("/", async (req, res) => {
+    const newEntry = new Password(req.body);
+    await newEntry.save();
+    res.json({ success: true });
+});
 
-// Delete a password by id
-app.delete('/', async (req, res) => { 
-    const password = req.body
-    const db = client.db(dbName);
-    const collection = db.collection('passwords');
-    const findResult = await collection.deleteOne(password);
-    res.send({success: true, result: findResult})
-})
+// PUT to update password
+app.put("/", async (req, res) => {
+    const { id, site, username, password } = req.body;
+    await Password.findOneAndUpdate({ id }, { site, username, password });
+    res.json({ success: true });
+});
 
+// DELETE password
+app.delete("/", async (req, res) => {
+    const { id } = req.body;
+    await Password.findOneAndDelete({ id });
+    res.json({ success: true });
+});
 
-app.listen(port, () => {
-    console.log(`Example app listening on  http://localhost:${port}`)
-})
+app.listen(process.env.PORT || 3000, () => {
+    console.log("Server running on port", process.env.PORT);
+});
