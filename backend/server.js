@@ -10,13 +10,10 @@ app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
 mongoose.connect(process.env.MONGO_URI, {
-  dbName: process.env.DB_NAME,
-  poolSize: 10, // Increase the pool size if necessary
-  serverSelectionTimeoutMS: 5000, 
+    dbName: process.env.DB_NAME,
 })
 .then(() => console.log("MongoDB connected"))
 .catch((err) => console.error("Mongo error", err));
-
 
 // Schema
 const passwordSchema = new mongoose.Schema({
@@ -25,7 +22,7 @@ const passwordSchema = new mongoose.Schema({
     username: String,
     password: String,
 });
-passwordSchema.index({ id: 1 });
+
 const Password = mongoose.model("Password", passwordSchema);
 
 // GET all passwords
