@@ -6,20 +6,18 @@ const cors = require('cors')
 
 dotenv.config()
 
-// Modified connection string with proper options
-const url = process.env.MONGO_URI + '?retryWrites=true&w=majority&tls=true&tlsInsecure=false'
+// Use the URI as-is from .env
+const url = process.env.MONGO_URI;
 const dbName = process.env.DB_NAME
 
 const port = process.env.PORT || Math.floor(Math.random() * (9000 - 8000) + 8000)
 
-// Create MongoDB client with proper options
+// Create MongoDB client with proper options - separate from the URI
 const client = new MongoClient(url, {
-  maxPoolSize: 10,
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
-  socketTimeoutMS: 45000, // Socket timeout
-})
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+  })
 
 // Better error handling in connection
 async function connectToMongo() {
