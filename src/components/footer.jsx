@@ -10,10 +10,10 @@ const Footer = () => {
                     {/* Logo and Description */}
                     <div className="flex flex-col">
                         <div className="logo font-bold text-lg flex items-center">
-                            <span className="text-green-500 text-xl">&lt;</span>
+                            <span className="text-purple-500 text-xl">&lt;</span>
                             <span className="bg-gradient-to-r from-white to-gray-300 text-transparent bg-clip-text">Pass</span>
-                            <span className="text-green-500">Vault</span>
-                            <span className="text-green-500 text-xl">/&gt;</span>
+                            <span className="text-purple-500">Vault</span>
+                            <span className="text-purple-500 text-xl">/&gt;</span>
                         </div>
                         <p className="text-gray-400 text-xs">
                             A secure, open-source password manager

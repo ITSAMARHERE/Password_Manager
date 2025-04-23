@@ -4,34 +4,16 @@ import { ToastContainer, toast } from 'react-toastify';
 import { v4 as uuidv4 } from 'uuid';
 import 'react-toastify/dist/ReactToastify.css';
 
-const API_URL = import.meta.env?.VITE_API_URL || 
-               (typeof process !== 'undefined' && process.env?.REACT_APP_API_URL) || 
-               'http://localhost:3000';
-
 const Manager = () => {
     const ref = useRef()
     const passwordRef = useRef()
     const [form, setform] = useState({ site: "", username: "", password: "" })
     const [passwordArray, setPasswordArray] = useState([])
-    const [isGenerating, setIsGenerating] = useState(false)
-    const [passwordLength, setPasswordLength] = useState(12)
-    const [showPasswordOptions, setShowPasswordOptions] = useState(false)
-    const [passwordOptions, setPasswordOptions] = useState({
-        uppercase: true,
-        lowercase: true,
-        numbers: true,
-        symbols: true
-    })
 
     const getPasswords = async () => {
-        try {
-            let req = await fetch(`${API_URL}/`)
-            let passwords = await req.json()
-            setPasswordArray(passwords)
-        } catch (error) {
-            console.error("Error fetching passwords:", error)
-            toast.error("Failed to fetch passwords")
-        }
+        let req = await fetch("http://localhost:3000/")
+        let passwords = await req.json()
+        setPasswordArray(passwords)
     }
 
     useEffect(() => {
@@ -39,7 +21,7 @@ const Manager = () => {
     }, [])
 
     const copyText = (text) => {
-        toast.success('Copied to clipboard!', {
+        toast('Copied to clipboard!', {
             position: "top-right",
             autoClose: 3000,
             hideProgressBar: false,
@@ -63,71 +45,25 @@ const Manager = () => {
         }
     }
 
-    const generatePassword = () => {
-        setIsGenerating(true)
-        
-        const uppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        const lowercaseChars = "abcdefghijklmnopqrstuvwxyz"
-        const numberChars = "0123456789"
-        const symbolChars = "!@#$%^&*()_-+=[]{}|:;<>,.?/"
-        
-        let validChars = ""
-        if (passwordOptions.uppercase) validChars += uppercaseChars
-        if (passwordOptions.lowercase) validChars += lowercaseChars
-        if (passwordOptions.numbers) validChars += numberChars
-        if (passwordOptions.symbols) validChars += symbolChars
-        
-        if (validChars === "") {
-            toast.error("Please select at least one character type")
-            setIsGenerating(false)
-            return
-        }
-        
-        let generatedPassword = ""
-        for (let i = 0; i < passwordLength; i++) {
-            const randomIndex = Math.floor(Math.random() * validChars.length)
-            generatedPassword += validChars[randomIndex]
-        }
-        
-        setform({ ...form, password: generatedPassword })
-        setIsGenerating(false)
-        
-        toast.success('Strong password generated!', {
-            position: "top-right",
-            autoClose: 3000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "dark",
-        });
-    }
-
     const savePassword = async () => {
         if (form.site.length > 3 && form.username.length > 3 && form.password.length > 3) {
-            try {
-                // If any such id exists in the db, delete it 
-                if (form.id) {
-                    await fetch(`${API_URL}/`, { 
-                        method: "DELETE", 
-                        headers: { "Content-Type": "application/json" }, 
-                        body: JSON.stringify({ id: form.id }) 
-                    })
-                }
-
-                const newPasswordItem = { ...form, id: uuidv4() }
-                setPasswordArray([...passwordArray, newPasswordItem])
-                
-                await fetch(`${API_URL}/`, { 
-                    method: "POST", 
+            // If form has an id, it means we're editing an existing password
+            if (form.id) {
+                // Update existing password in database
+                await fetch("http://localhost:3000/", { 
+                    method: "PUT", 
                     headers: { "Content-Type": "application/json" }, 
-                    body: JSON.stringify(newPasswordItem) 
-                })
-
-                // Clear the form and show toast
-                setform({ site: "", username: "", password: "" })
-                toast.success('Password saved successfully!', {
+                    body: JSON.stringify(form) 
+                });
+                
+                // Update the state by replacing the old password with the edited one
+                setPasswordArray(
+                    passwordArray.map(item => 
+                        item.id === form.id ? form : item
+                    )
+                );
+                
+                toast('Password updated!', {
                     position: "top-right",
                     autoClose: 3000,
                     hideProgressBar: false,
@@ -137,336 +73,255 @@ const Manager = () => {
                     progress: undefined,
                     theme: "dark",
                 });
-            } catch (error) {
-                console.error("Error saving password:", error)
-                toast.error("Failed to save password")
-            }
-        }
-        else {
-            toast.error('Error: All fields must be longer than 3 characters.');
-        }
-    }
-
-    const deletePassword = async (id) => {
-        console.log("Deleting password with id ", id)
-        let c = confirm("Do you really want to delete this password?")
-        if (c) {
-            try {
-                setPasswordArray(passwordArray.filter(item => item.id !== id))
+            } else {
+                // Create a new password with a new ID
+                const newPassword = { ...form, id: uuidv4() };
                 
-                await fetch(`${API_URL}/`, { 
-                    method: "DELETE", 
+                // Save to database
+                await fetch("http://localhost:3000/", { 
+                    method: "POST", 
                     headers: { "Content-Type": "application/json" }, 
-                    body: JSON.stringify({ id }) 
-                })
-
-                toast.success('Password deleted successfully!', {
+                    body: JSON.stringify(newPassword) 
+                });
+                
+                // Add the new password to the state
+                setPasswordArray([...passwordArray, newPassword]);
+                
+                toast('Password saved!', {
                     position: "top-right",
                     autoClose: 3000,
                     hideProgressBar: false,
-                    closeOnClick: true, 
+                    closeOnClick: true,
+                    pauseOnHover: true,
                     draggable: true,
                     progress: undefined,
                     theme: "dark",
                 });
-            } catch (error) {
-                console.error("Error deleting password:", error)
-                toast.error("Failed to delete password")
             }
+    
+            // Clear the form
+            setform({ site: "", username: "", password: "" });
+        } else {
+            toast.error('Error: All fields must be at least 4 characters!', {
+                theme: "dark"
+            });
+        }
+    };
+
+    const deletePassword = async (id) => {
+        let c = confirm("Do you really want to delete this password?")
+        if (c) {
+            setPasswordArray(passwordArray.filter(item => item.id !== id))
+            
+            await fetch("http://localhost:3000/", { 
+                method: "DELETE", 
+                headers: { "Content-Type": "application/json" }, 
+                body: JSON.stringify({ id }) 
+            })
+
+            toast('Password Deleted!', {
+                position: "top-right",
+                autoClose: 3000,
+                hideProgressBar: false,
+                closeOnClick: true, 
+                draggable: true,
+                progress: undefined,
+                theme: "dark",
+            });
         }
     }
 
     const editPassword = (id) => {
-        const passwordToEdit = passwordArray.find(i => i.id === id)
+        // Find the password to edit
+        const passwordToEdit = passwordArray.find(item => item.id === id);
         if (passwordToEdit) {
-            setform({ ...passwordToEdit, id: id })
-            setPasswordArray(passwordArray.filter(item => item.id !== id))
+            // Set the form with the password data
+            setform({ ...passwordToEdit });
         }
-    }
+    };
 
     const handleChange = (e) => {
         setform({ ...form, [e.target.name]: e.target.value })
     }
 
-    const handlePasswordOptionChange = (option) => {
-        setPasswordOptions({
-            ...passwordOptions,
-            [option]: !passwordOptions[option]
-        })
-    }
-
     return (
-        <div className="min-h-screen relative">
-            <div className="fixed inset-0 bg-green-50 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px]">
-                <div className="absolute left-0 right-0 top-0 m-auto h-64 w-64 rounded-full bg-green-400 opacity-20 blur-[100px]"></div>
+        <>
+            <ToastContainer />
+            <div className="absolute inset-0 -z-10 h-full w-full bg-gray-950 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:14px_24px]">
+                <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-purple-900 opacity-20 blur-[100px]"></div>
             </div>
             
-            <ToastContainer />
-            <div className="p-3 container mx-auto min-h-[88.2vh] max-w-6xl relative z-10">
-                <div className="mb-8 pt-4">
-                    <h1 className='text-4xl md:text-5xl font-bold text-center mb-2'>
-                        <span className='text-green-500'> &lt;</span>
-                        <span className="bg-gradient-to-r from-neutral-800 to-neutral-600 text-transparent bg-clip-text">Pass</span>
-                        <span className='text-green-500'>Vault</span>
-                        <span className='text-green-500'>/&gt;</span>
+            <div className="p-3 md:container mx-auto min-h-[88.2vh]">
+                <div className="bg-gray-900 rounded-xl shadow-2xl shadow-purple-900/20 p-6 mb-8">
+                    <h1 className='text-4xl font-bold text-center mb-2'>
+                        <span className='text-purple-500'> &lt;</span>
+                        <span className="text-gray-100">Pass</span>
+                        <span className='text-purple-500'>VAULT/&gt;</span>
                     </h1>
-                    <p className='text-green-900 text-lg text-center'>Your own secure Password Manager</p>
-                </div>
+                    <p className='text-purple-400 text-lg text-center'>Your secure password vault</p>
 
-                <div className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg shadow-green-900/10 border border-green-100 mb-10">
-                    <h2 className="text-xl font-semibold mb-6 text-green-800 border-b border-green-200 pb-2">Add New Password</h2>
-                    
-                    <div className="flex flex-col p-4 text-black gap-6">
-                        <div className="flex flex-col space-y-1">
-                            <label htmlFor="site" className="text-sm font-medium text-gray-700">Website URL</label>
+                    <div className="flex flex-col p-4 gap-6 items-center mt-4">
+                        <div className="relative w-full">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                </svg>
+                            </div>
                             <input 
                                 value={form.site} 
                                 onChange={handleChange} 
-                                placeholder='Enter website URL (e.g. example.com)' 
-                                className='rounded-lg border border-green-200 w-full p-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300' 
+                                placeholder='Enter website URL' 
+                                className='rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 w-full p-4 py-3 pl-10 text-gray-200 placeholder-gray-500 outline-none transition-all duration-200' 
                                 type="text" 
                                 name="site" 
                                 id="site" 
                             />
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="flex flex-col space-y-1">
-                                <label htmlFor="username" className="text-sm font-medium text-gray-700">Username / Email</label>
+                        <div className="flex flex-col md:flex-row w-full justify-between gap-6">
+                            <div className="relative w-full">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                </div>
                                 <input 
                                     value={form.username} 
                                     onChange={handleChange} 
-                                    placeholder='Enter username or email' 
-                                    className='rounded-lg border border-green-200 w-full p-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300' 
+                                    placeholder='Enter Username' 
+                                    className='rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 w-full p-4 py-3 pl-10 text-gray-200 placeholder-gray-500 outline-none transition-all duration-200' 
                                     type="text" 
                                     name="username" 
                                     id="username" 
                                 />
                             </div>
                             
-                            <div className="flex flex-col space-y-1">
-                                <label htmlFor="password" className="text-sm font-medium text-gray-700">Password</label>
-                                <div className="relative">
-                                    <input 
-                                        ref={passwordRef} 
-                                        value={form.password} 
-                                        onChange={handleChange} 
-                                        placeholder='Enter password' 
-                                        className='rounded-lg border border-green-200 w-full p-3 py-2 pr-12 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300' 
-                                        type="password" 
-                                        name="password" 
-                                        id="password" 
-                                    />
-                                    <span className='absolute right-4 top-2.5 cursor-pointer' onClick={showPassword}>
-                                        <img ref={ref} className='p-1' width={24} src="icons/eye.png" alt="eye" />
-                                    </span>
+                            <div className="relative w-full">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
                                 </div>
+                                <input 
+                                    ref={passwordRef} 
+                                    value={form.password} 
+                                    onChange={handleChange} 
+                                    placeholder='Enter Password' 
+                                    className='rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 w-full p-4 py-3 pl-10 text-gray-200 placeholder-gray-500 outline-none transition-all duration-200' 
+                                    type="password" 
+                                    name="password" 
+                                    id="password" 
+                                />
+                                <span className='absolute right-3 top-3 cursor-pointer' onClick={showPassword}>
+                                    <img ref={ref} className='p-1 opacity-70 hover:opacity-100 transition-opacity' width={26} src="icons/eye.png" alt="eye" />
+                                </span>
                             </div>
                         </div>
                         
-                        <div className="flex flex-col md:flex-row gap-4">
-                            <button 
-                                onClick={() => setShowPasswordOptions(!showPasswordOptions)} 
-                                className='flex justify-center cursor-pointer items-center gap-2 bg-gray-100 hover:bg-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 transition-all duration-300 border border-gray-300'
-                            >
-                                {showPasswordOptions ? 'Hide Options' : 'Password Options'}
-                            </button>
-                            
-                            <button 
-                                onClick={generatePassword} 
-                                disabled={isGenerating}
-                                className='flex justify-center cursor-pointer items-center gap-2 bg-blue-500 hover:bg-blue-600 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all duration-300 disabled:bg-blue-300'
-                            >
-                                {isGenerating ? 'Generating...' : 'Generate Strong Password'}
-                            </button>
-                            
-                            <button 
-                                onClick={savePassword} 
-                                className='flex justify-center cursor-pointer items-center gap-2 bg-green-500 hover:bg-green-600 rounded-lg px-6 py-2 text-sm font-medium text-white transition-all duration-300 ml-auto'
-                            >
-                                Save Password
-                            </button>
-                        </div>
-                        
-                        {showPasswordOptions && (
-                            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <h3 className="text-sm font-medium text-gray-700 mb-3">Password Generator Options</h3>
-                                
-                                <div className="flex flex-col space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <label htmlFor="length" className="text-sm text-gray-600">Length: {passwordLength}</label>
-                                        <input 
-                                            type="range" 
-                                            id="length" 
-                                            min="8" 
-                                            max="32" 
-                                            value={passwordLength} 
-                                            onChange={(e) => setPasswordLength(parseInt(e.target.value))}
-                                            className="w-2/3" 
-                                        />
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                        <label className="flex items-center space-x-2">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={passwordOptions.uppercase} 
-                                                onChange={() => handlePasswordOptionChange('uppercase')}
-                                                className="rounded text-green-500 focus:ring-green-500"
-                                            />
-                                            <span className="text-sm text-gray-600">Uppercase (A-Z)</span>
-                                        </label>
-                                        
-                                        <label className="flex items-center space-x-2">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={passwordOptions.lowercase} 
-                                                onChange={() => handlePasswordOptionChange('lowercase')}
-                                                className="rounded text-green-500 focus:ring-green-500"
-                                            />
-                                            <span className="text-sm text-gray-600">Lowercase (a-z)</span>
-                                        </label>
-                                        
-                                        <label className="flex items-center space-x-2">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={passwordOptions.numbers} 
-                                                onChange={() => handlePasswordOptionChange('numbers')}
-                                                className="rounded text-green-500 focus:ring-green-500"
-                                            />
-                                            <span className="text-sm text-gray-600">Numbers (0-9)</span>
-                                        </label>
-                                        
-                                        <label className="flex items-center space-x-2">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={passwordOptions.symbols} 
-                                                onChange={() => handlePasswordOptionChange('symbols')}
-                                                className="rounded text-green-500 focus:ring-green-500"
-                                            />
-                                            <span className="text-sm text-gray-600">Symbols (!@#$)</span>
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                        <button 
+                            onClick={savePassword} 
+                            className='flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 rounded-lg px-8 py-3 w-fit border-none shadow-lg shadow-purple-900/30 text-white font-medium transition-all duration-200 transform hover:scale-105'
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                            </svg>
+                            {form.id ? 'Update' : 'Save'}
+                        </button>
                     </div>
                 </div>
 
-                <div className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg shadow-green-900/10 border border-green-100 mb-10">
-                    <div className="flex items-center justify-between mb-6 border-b border-green-200 pb-2">
-                        <h2 className="text-xl font-semibold text-green-800">Your Passwords</h2>
-                        <div className="text-sm text-gray-500">
-                            {passwordArray.length} {passwordArray.length === 1 ? 'password' : 'passwords'} stored
-                        </div>
-                    </div>
+                <div className="bg-gray-900 rounded-xl shadow-2xl shadow-purple-900/20 p-6">
+                    <h2 className='font-bold text-2xl py-4 text-gray-100 flex items-center'>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        Your Passwords
+                    </h2>
                     
-                    {passwordArray.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-10 text-gray-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    {passwordArray.length === 0 && 
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-700 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
-                            <p className="text-lg font-medium">No passwords yet</p>
-                            <p className="text-sm text-center max-w-md mt-2">Add your first password using the form above to keep your accounts secure and easily accessible.</p>
+                            <p>No passwords saved yet</p>
+                            <p className="text-sm mt-2">Add your first password using the form above</p>
                         </div>
-                    )}
+                    }
                     
-                    {passwordArray.length > 0 && (
-                        <div className="overflow-x-auto">
-                            <table className="table-auto w-full rounded-lg overflow-hidden">
-                                <thead className='bg-green-700 text-white'>
+                    {passwordArray.length > 0 && 
+                        <div className="overflow-x-auto rounded-lg">
+                            <table className="table-auto w-full rounded-lg overflow-hidden mb-6">
+                                <thead className='bg-gray-800 text-gray-200'>
                                     <tr>
-                                        <th className='py-3 px-4 text-left'>Website</th>
+                                        <th className='py-3 px-4 text-left'>Site</th>
                                         <th className='py-3 px-4 text-left'>Username</th>
                                         <th className='py-3 px-4 text-left'>Password</th>
                                         <th className='py-3 px-4 text-center'>Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className='divide-y divide-green-100'>
+                                <tbody className='bg-gray-800 bg-opacity-50'>
                                     {passwordArray.map((item, index) => {
-                                        return (
-                                            <tr key={index} className={index % 2 === 0 ? 'bg-green-50' : 'bg-white'}>
-                                                <td className='py-3 px-4'>
-                                                    <div className='flex items-center'>
-                                                        <a 
-                                                            href={item.site.startsWith('http') ? item.site : `https://${item.site}`} 
-                                                            target='_blank'
-                                                            rel="noopener noreferrer"
-                                                            className="text-green-600 hover:text-green-800 hover:underline transition-colors duration-300 truncate max-w-[180px] flex-1"
-                                                        >
-                                                            {item.site || ''}
-                                                        </a>
-                                                        <button 
-                                                            className='ml-2 p-1 hover:bg-green-100 rounded-full transition-colors duration-300' 
-                                                            onClick={() => { copyText(item.site || '') }}
-                                                            title="Copy to clipboard"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                            </svg>
-                                                        </button>
+                                        return <tr key={index} className={index % 2 === 0 ? 'bg-gray-800 bg-opacity-30' : ''}>
+                                            <td className='py-3 px-4 border-b border-gray-700'>
+                                                <div className='flex items-center'>
+                                                    <a href={item.site} target='_blank' className="text-purple-400 hover:text-purple-300 truncate max-w-xs">{item.site}</a>
+                                                    <div className='ml-2 cursor-pointer text-gray-400 hover:text-white transition-colors' onClick={() => { copyText(item.site) }}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                                        </svg>
                                                     </div>
-                                                </td>
-                                                <td className='py-3 px-4'>
-                                                    <div className='flex items-center'>
-                                                        <span className="truncate max-w-[180px] flex-1">{item.username || ''}</span>
-                                                        <button 
-                                                            className='ml-2 p-1 hover:bg-green-100 rounded-full transition-colors duration-300' 
-                                                            onClick={() => { copyText(item.username || '') }}
-                                                            title="Copy to clipboard"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                            </svg>
-                                                        </button>
+                                                </div>
+                                            </td>
+                                            <td className='py-3 px-4 border-b border-gray-700'>
+                                                <div className='flex items-center'>
+                                                    <span className="text-gray-300 truncate max-w-xs">{item.username}</span>
+                                                    <div className='ml-2 cursor-pointer text-gray-400 hover:text-white transition-colors' onClick={() => { copyText(item.username) }}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                                        </svg>
                                                     </div>
-                                                </td>
-                                                <td className='py-3 px-4'>
-                                                    <div className='flex items-center'>
-                                                        <span className="font-mono">{item.password ? "•".repeat(Math.min(12, item.password.length)) : ''}</span>
-                                                        <button 
-                                                            className='ml-2 p-1 hover:bg-green-100 rounded-full transition-colors duration-300' 
-                                                            onClick={() => { copyText(item.password || '') }}
-                                                            title="Copy to clipboard"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                            </svg>
-                                                        </button>
+                                                </div>
+                                            </td>
+                                            <td className='py-3 px-4 border-b border-gray-700'>
+                                                <div className='flex items-center'>
+                                                    <span className="text-gray-400">{"•".repeat(item.password.length)}</span>
+                                                    <div className='ml-2 cursor-pointer text-gray-400 hover:text-white transition-colors' onClick={() => { copyText(item.password) }}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                                        </svg>
                                                     </div>
-                                                </td>
-                                                <td className='py-3 px-4'>
-                                                    <div className='flex items-center justify-center space-x-2'>
-                                                        <button 
-                                                            className='p-1.5 bg-blue-50 hover:bg-blue-100 cursor-pointer text-blue-600 rounded-lg transition-colors duration-300' 
-                                                            onClick={() => { editPassword(item.id) }}
-                                                            title="Edit password"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                            </svg>
-                                                        </button>
-                                                        <button 
-                                                            className='p-1.5 bg-red-50 hover:bg-red-100 cursor-pointer text-red-600 rounded-lg transition-colors duration-300' 
-                                                            onClick={() => { deletePassword(item.id) }}
-                                                            title="Delete password"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
+                                                </div>
+                                            </td>
+                                            <td className='py-3 px-4 border-b border-gray-700 text-center'>
+                                                <div className="flex justify-center space-x-3">
+                                                    <button 
+                                                        onClick={() => { editPassword(item.id) }}
+                                                        className="text-blue-400 hover:text-blue-300 transition-colors p-1 rounded-full hover:bg-gray-700"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => { deletePassword(item.id) }}
+                                                        className="text-red-400 hover:text-red-300 transition-colors p-1 rounded-full hover:bg-gray-700"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     })}
                                 </tbody>
                             </table>
                         </div>
-                    )}
+                    }
                 </div>
+             
             </div>
-        </div>
+        </>
     )
 }
 
