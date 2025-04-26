@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173", credentials: true }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || "https://password-manager-1-3ne8.onrender.com", credentials: true }));
 app.use(express.json());
 
 // Enhanced MongoDB connection with improved options and error handling
