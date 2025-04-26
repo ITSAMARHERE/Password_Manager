@@ -2,14 +2,30 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || "https://password-manager-1-3ne8.onrender.com", credentials: true }));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://password-manager-1-3ne8.onrender.com'
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('The CORS policy for this site does not allow access from the specified origin.'), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
 app.use(express.json());
 
-// Enhanced MongoDB connection with improved options and error handling
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGO_URI;
@@ -20,7 +36,7 @@ const connectDB = async () => {
     
     await mongoose.connect(mongoURI, {
       dbName: process.env.DB_NAME,
-      serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+      serverSelectionTimeoutMS: 30000, 
       connectTimeoutMS: 30000,
       socketTimeoutMS: 45000,
       heartbeatFrequencyMS: 30000,
@@ -34,7 +50,6 @@ const connectDB = async () => {
       stack: err.stack
     });
     
-    // Exit with failure in production, or retry in development
     if (process.env.NODE_ENV === 'production') {
       console.error("Exiting due to database connection failure");
       process.exit(1);
@@ -45,10 +60,10 @@ const connectDB = async () => {
   }
 };
 
-// Connect to MongoDB
+
 connectDB();
 
-// Add connection monitoring
+
 mongoose.connection.on('error', (err) => {
   console.error('MongoDB connection error:', err);
 });
@@ -58,35 +73,169 @@ mongoose.connection.on('disconnected', () => {
   connectDB();
 });
 
-// Schema
+
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  name: { type: String, required: true }
+}, { timestamps: true });
+
+
 const passwordSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
+  id: { type: String, required: true },
+  userId: { type: String, required: true }, 
   site: { type: String, required: true },
   username: { type: String, required: true },
   password: { type: String, required: true }
 }, { timestamps: true });
 
+
+passwordSchema.index({ id: 1, userId: 1 }, { unique: true });
+
+const User = mongoose.model("User", userSchema);
 const Password = mongoose.model("Password", passwordSchema);
 
-// Middleware for error handling
+
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-// GET all passwords
-app.get("/", asyncHandler(async (req, res) => {
-  const data = await Password.find();
+
+const authenticate = asyncHandler(async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret_key");
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
+
+app.post("/api/register", asyncHandler(async (req, res) => {
+  const { name, email, password } = req.body;
+  
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ success: false, message: "All fields are required" });
+  }
+  
+
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    return res.status(400).json({ success: false, message: "User already exists with this email" });
+  }
+ 
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+  
+
+  const user = new User({
+    name,
+    email,
+    password: hashedPassword
+  });
+  
+  await user.save();
+  
+
+  const token = jwt.sign(
+    { userId: user._id },
+    process.env.JWT_SECRET || "your_jwt_secret_key",
+    { expiresIn: '7d' }
+  );
+  
+  res.status(201).json({
+    success: true,
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email
+    }
+  });
+}));
+
+
+app.post("/api/login", asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  
+
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: "Email and password are required" });
+  }
+ 
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(400).json({ success: false, message: "Invalid credentials" });
+  }
+  
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    return res.status(400).json({ success: false, message: "Invalid credentials" });
+  }
+  
+
+  const token = jwt.sign(
+    { userId: user._id },
+    process.env.JWT_SECRET || "your_jwt_secret_key",
+    { expiresIn: '7d' }
+  );
+  
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email
+    }
+  });
+}));
+
+
+app.get("/api/profile", authenticate, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.userId).select('-password');
+  
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+  
+  res.json({
+    success: true,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email
+    }
+  });
+}));
+
+
+app.get("/api/passwords", authenticate, asyncHandler(async (req, res) => {
+  const data = await Password.find({ userId: req.userId });
   res.json(data);
 }));
 
-// POST new password
-app.post("/", asyncHandler(async (req, res) => {
-  const newEntry = new Password(req.body);
+
+app.post("/api/passwords", authenticate, asyncHandler(async (req, res) => {
+  const newEntry = new Password({
+    ...req.body,
+    userId: req.userId
+  });
+  
   await newEntry.save();
   res.status(201).json({ success: true, data: newEntry });
 }));
 
-// PUT to update password
-app.put("/", asyncHandler(async (req, res) => {
+
+app.put("/api/passwords", authenticate, asyncHandler(async (req, res) => {
   const { id, site, username, password } = req.body;
   
   if (!id) {
@@ -94,7 +243,7 @@ app.put("/", asyncHandler(async (req, res) => {
   }
   
   const updatedPassword = await Password.findOneAndUpdate(
-    { id }, 
+    { id, userId: req.userId }, 
     { site, username, password },
     { new: true, runValidators: true }
   );
@@ -106,15 +255,15 @@ app.put("/", asyncHandler(async (req, res) => {
   res.json({ success: true, data: updatedPassword });
 }));
 
-// DELETE password
-app.delete("/", asyncHandler(async (req, res) => {
+
+app.delete("/api/passwords", authenticate, asyncHandler(async (req, res) => {
   const { id } = req.body;
   
   if (!id) {
     return res.status(400).json({ success: false, message: "ID is required" });
   }
   
-  const deletedPassword = await Password.findOneAndDelete({ id });
+  const deletedPassword = await Password.findOneAndDelete({ id, userId: req.userId });
   
   if (!deletedPassword) {
     return res.status(404).json({ success: false, message: "Password not found" });
@@ -123,7 +272,6 @@ app.delete("/", asyncHandler(async (req, res) => {
   res.json({ success: true, data: deletedPassword });
 }));
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
   res.status(500).json({ 
@@ -134,7 +282,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ 
     status: "ok", 
