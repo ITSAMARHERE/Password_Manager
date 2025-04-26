@@ -6,39 +6,11 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
-// Helper to create detailed connection error logs
-const logConnectionError = (err) => {
-  console.error("❌ MongoDB connection error:", {
-    message: err.message,
-    code: err.code,
-    name: err.name,
-    stack: err.stack?.split('\n').slice(0, 3).join('\n') // Abbreviated stack for readability
-  });
-  
-  if (err.message.includes("IP that isn't whitelisted")) {
-    console.error(`
-    ======================================================
-    🚨 IP WHITELIST ERROR DETECTED 🚨
-    
-    Your Render server IP is not whitelisted in MongoDB Atlas.
-    
-    Solutions:
-    1) Go to MongoDB Atlas -> Network Access -> Add IP Address
-       Add entry: 0.0.0.0/0 (allow access from anywhere)
-       
-    2) Or add specific Render IPs (check Render docs)
-    
-    3) Or use MongoDB Atlas serverless instances
-    ======================================================
-    `);
-  }
-};
-
-// Enhanced MongoDB connection with better error handling
-const connectDB = async (retryCount = 0) => {
+// Enhanced MongoDB connection with improved options and error handling
+const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGO_URI;
     
@@ -46,43 +18,29 @@ const connectDB = async (retryCount = 0) => {
       throw new Error("MONGO_URI is not defined in environment variables");
     }
     
-    console.log("Attempting to connect to MongoDB...");
-    
-    // Add retry parameters if they're not already in the URI
-    const connectionString = mongoURI.includes('?') 
-      ? mongoURI 
-      : `${mongoURI}?retryWrites=true&w=majority`;
-    
-    await mongoose.connect(connectionString, {
+    await mongoose.connect(mongoURI, {
       dbName: process.env.DB_NAME,
-      serverSelectionTimeoutMS: 30000,
+      serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
       connectTimeoutMS: 30000,
       socketTimeoutMS: 45000,
+      heartbeatFrequencyMS: 30000,
     });
     
     console.log("✅ MongoDB connected successfully");
-    
-    // Reset retry count on successful connection
-    if (retryCount > 0) {
-      console.log(`Successfully connected after ${retryCount} retries`);
-    }
-    
   } catch (err) {
-    logConnectionError(err);
+    console.error("❌ MongoDB connection error:", {
+      message: err.message,
+      code: err.code,
+      stack: err.stack
+    });
     
-    const maxRetries = 5;
-    if (retryCount < maxRetries && process.env.NODE_ENV !== 'production') {
-      const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff
-      console.log(`Retrying connection (${retryCount + 1}/${maxRetries}) in ${delay/1000} seconds...`);
-      setTimeout(() => connectDB(retryCount + 1), delay);
+    // Exit with failure in production, or retry in development
+    if (process.env.NODE_ENV === 'production') {
+      console.error("Exiting due to database connection failure");
+      process.exit(1);
     } else {
-      if (process.env.NODE_ENV === 'production') {
-        console.error("Failed to connect to database in production mode");
-        // In production we continue running but with database in failed state
-        // This allows the app to at least serve a "maintenance mode" page
-      } else {
-        console.error(`Failed to connect after ${maxRetries} retries`);
-      }
+      console.log("Will retry connection in 5 seconds...");
+      setTimeout(connectDB, 5000);
     }
   }
 };
@@ -97,7 +55,7 @@ mongoose.connection.on('error', (err) => {
 
 mongoose.connection.on('disconnected', () => {
   console.warn('MongoDB disconnected. Attempting to reconnect...');
-  setTimeout(connectDB, 5000); // Wait 5 seconds before trying to reconnect
+  connectDB();
 });
 
 // Schema
@@ -114,49 +72,10 @@ const Password = mongoose.model("Password", passwordSchema);
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-// Health check endpoint that always works even if DB is down
-app.get("/health", (req, res) => {
-  const dbStatus = mongoose.connection.readyState;
-  const dbStatusText = {
-    0: "disconnected",
-    1: "connected",
-    2: "connecting",
-    3: "disconnecting",
-    99: "uninitialized"
-  }[dbStatus] || "unknown";
-  
-  res.json({ 
-    status: "service running", 
-    database: {
-      status: dbStatusText,
-      readyState: dbStatus
-    },
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// DB connection check middleware for database routes
-const dbConnected = (req, res, next) => {
-  if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      success: false,
-      message: "Database connection unavailable. Please try again later.",
-      details: process.env.NODE_ENV === 'production' ? {} : {
-        readyState: mongoose.connection.readyState
-      }
-    });
-  }
-  next();
-};
-
-// Apply database middleware to all database operations
-app.use(["/", "/passwords"], dbConnected);
-
 // GET all passwords
 app.get("/", asyncHandler(async (req, res) => {
   const data = await Password.find();
-  res.json({ success: true, data });
+  res.json(data);
 }));
 
 // POST new password
@@ -207,20 +126,20 @@ app.delete("/", asyncHandler(async (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
-  
-  // Handle specific MongoDB errors
-  if (err.name === 'MongoNetworkError' || err.name === 'MongooseServerSelectionError') {
-    return res.status(503).json({
-      success: false,
-      message: "Database connection error. Please try again later."
-    });
-  }
-  
   res.status(500).json({ 
     success: false, 
     message: process.env.NODE_ENV === 'production' 
       ? "Server error" 
       : err.message
+  });
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    dbConnected: mongoose.connection.readyState === 1,
+    timestamp: new Date().toISOString()
   });
 });
 
